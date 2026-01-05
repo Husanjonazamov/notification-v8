@@ -32,7 +32,7 @@ ALLOWED_HOSTS = [
 
 CSRF_TRUSTED_ORIGINS = [
     'https://feruzbek.aniverse.uz',
-    'https://shoxboz.aniverse.uz'
+    'https://notification.aniverse.uz'
 ]
 
 
