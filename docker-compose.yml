@@ -1,0 +1,35 @@
+version: '3'
+
+services:
+  bot:
+    build:
+      context: .
+      network: host   # <-- qo‘shildi
+
+    volumes:
+      - .:/code
+      - sqlite_data:/code/db
+    env_file:
+      - .env  
+    ports:
+      - "8077:8000"
+    command: |
+      bash -c "
+        python3 manage.py migrate &
+        python3 manage.py runserver 0.0.0.0:8000 &
+        wait
+      "
+  bot_service:
+    build:
+      context: .
+    command: python3 bot.py
+    volumes:
+      - .:/code
+    environment:
+      - ENV_VAR=value
+    depends_on:
+      - bot
+    restart: always
+
+volumes:
+  sqlite_data:
