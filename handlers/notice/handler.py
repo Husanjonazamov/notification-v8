@@ -12,11 +12,17 @@ from datetime import datetime
 
 
 async def dynamic_notice_send_task():
-    async with client:
-        await client.start()
-        print("Client started...")
-
-        while True:
+    """
+    Task to send notices dynamically. Client connection is managed in bot.py.
+    Just checks if client is connected before sending, skips inaccessible chats silently.
+    """
+    while True:
+        try:
+            # Wait for client to be connected and authorized
+            if not client.is_connected() or not await client.is_user_authorized():
+                await asyncio.sleep(5)  # Wait a bit and check again
+                continue
+            
             notices = await sync_to_async(list)(Notice.objects.all())
             for notice in notices:
                 if notice.id not in last_notice_data or last_notice_data[notice.id]["descriptions"] != notice.descriptions:
@@ -35,25 +41,39 @@ async def dynamic_notice_send_task():
                 check_interval = min(interval_seconds / 10, 30)
                 
                 for chat_id in chat_ids:
-                    time_since_last_sent = None
-                    if last_sent_times[chat_id] is not None:
-                        time_since_last_sent = (current_time - last_sent_times[chat_id]).total_seconds()
-                    
-                    # Send if never sent before, or if interval has passed
-                    should_send = time_since_last_sent is None or time_since_last_sent >= interval_seconds
-                    
-                    if should_send:
-                        if await is_chat_accessible(chat_id):
-                            await send_notice(notice, chat_id)
-                            last_sent_times[chat_id] = current_time
-                            # Small delay between messages to different chats to avoid API rate limits
-                            # The interval check ensures we don't send to the same chat too frequently
-                            await asyncio.sleep(0.3)
+                    try:
+                        # Check if client is still connected before processing
+                        if not client.is_connected():
+                            break  # Exit chat loop, will retry at next iteration
+                        
+                        time_since_last_sent = None
+                        if last_sent_times[chat_id] is not None:
+                            time_since_last_sent = (current_time - last_sent_times[chat_id]).total_seconds()
+                        
+                        # Send if never sent before, or if interval has passed
+                        should_send = time_since_last_sent is None or time_since_last_sent >= interval_seconds
+                        
+                        if should_send:
+                            # Check if chat is accessible, if not just skip silently
+                            if await is_chat_accessible(chat_id):
+                                # Try to send notice, if fails just continue to next chat
+                                success = await send_notice(notice, chat_id)
+                                if success:
+                                    last_sent_times[chat_id] = current_time
+                                    # Small delay between messages to different chats to avoid API rate limits
+                                    await asyncio.sleep(0.3)
+                            # If chat is not accessible or client disconnected, just skip silently and continue
                         else:
-                            print(f"Cannot send to {chat_id}")
-                    else:
-                        # Small delay between checking different chats
-                        await asyncio.sleep(0.05)
+                            # Small delay between checking different chats
+                            await asyncio.sleep(0.05)
+                    except Exception as e:
+                        # If any error occurs for this chat, just skip and continue to next
+                        # Don't let one chat's error stop the entire process
+                        # Only log non-disconnection errors
+                        error_msg = str(e).lower()
+                        if 'disconnected' not in error_msg:
+                            print(f"Error processing chat {chat_id}: {e}")
+                        continue
             
             # Sleep adaptively based on the check interval
             if notices:
@@ -63,4 +83,10 @@ async def dynamic_notice_send_task():
                 sleep_time = 30  # Default check every 30 seconds if no notices
             
             await sleep(sleep_time)
+            
+        except Exception as e:
+            # Catch any unexpected errors and continue
+            print(f"Error in notice sending loop: {e}")
+            await asyncio.sleep(5)  # Wait a bit before retrying
+            continue
 

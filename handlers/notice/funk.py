@@ -1,5 +1,6 @@
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
+from telethon.errors.rpcerrorlist import ChatWriteForbiddenError, ChannelPrivateError, UserBannedInChannelError
 from utils import env
 from services.services import getNotice
 from asgiref.sync import sync_to_async
@@ -50,13 +51,32 @@ last_sents = {chat_id: False for chat_id in chat_ids}
 last_sent_times = {chat_id: None for chat_id in chat_ids}
 
 async def is_chat_accessible(chat_id):
+    """
+    Check if chat is accessible. Returns False if chat is not accessible or client is disconnected.
+    """
     try:
+        # Check if client is connected
+        if not client.is_connected():
+            return False
+        
+        # Try to get entity to check accessibility
         await client.get_entity(chat_id)
         return True
+    except (ChannelPrivateError, ChatWriteForbiddenError, UserBannedInChannelError, ValueError) as e:
+        # These are expected errors for inaccessible chats - just skip silently
+        return False
     except Exception as e:
+        error_msg = str(e).lower()
+        # If client is disconnected, just skip
+        if 'disconnected' in error_msg or 'not connected' in error_msg:
+            return False
+        # For other errors, log but still return False to skip
         print(f"Chat {chat_id} is not accessible: {e}")
-        with open("error_log.txt", "a") as log_file:
-            log_file.write(f"Chat {chat_id} is not accessible. Error: {e}\n")
+        try:
+            with open("error_log.txt", "a") as log_file:
+                log_file.write(f"{datetime.now().isoformat()} - Chat {chat_id} is not accessible. Error: {e}\n")
+        except:
+            pass
         return False
 
 
@@ -64,15 +84,20 @@ async def is_chat_accessible(chat_id):
 async def send_notice(notice, chat_id):
     """
     Send a notice to a chat with proper error handling and rate limit compliance.
+    Returns True if sent successfully, False otherwise.
     """
+    # Check if client is connected before attempting to send
+    if not client.is_connected():
+        return False
+    
     formatted_description = f"{notice.descriptions}"
-    max_retries = 3
+    max_retries = 2
     retry_count = 0
     
     while retry_count < max_retries:
         try:
             await client.send_message(chat_id, formatted_description, parse_mode='Markdown')
-            return  # Successfully sent
+            return True  # Successfully sent
         except FloodWaitError as e:
             # Telegram is asking us to wait - we must respect this
             wait_time = e.seconds
@@ -80,32 +105,30 @@ async def send_notice(notice, chat_id):
             await asyncio.sleep(wait_time)
             # Retry after waiting (don't increment retry_count as this is expected behavior)
             continue
+        except (ChannelPrivateError, ChatWriteForbiddenError, UserBannedInChannelError, ValueError) as e:
+            # These are expected errors - chat is not accessible, just skip
+            return False
         except Exception as e:
+            error_msg = str(e).lower()
+            
+            # If client is disconnected, just skip this chat
+            if 'disconnected' in error_msg or 'not connected' in error_msg:
+                return False
+            
+            # For other errors, try retrying once
             retry_count += 1
-            error_msg = str(e)
-            print(f"Error sending message to {chat_id} (attempt {retry_count}/{max_retries}): {error_msg}")
-            
-            # Log the error
-            try:
-                with open("error_log.txt", "a") as log_file:
-                    log_file.write(f"{datetime.now().isoformat()} - Chat ID: {chat_id} - Error: {error_msg}\n")
-            except Exception as log_error:
-                print(f"Failed to write to error log: {log_error}")
-            
-            # If it's a retryable error and we haven't exceeded max retries, wait and retry
-            if retry_count < max_retries and "wait" in error_msg.lower():
-                # Extract wait time from error message if possible, otherwise wait 5 seconds
-                wait_time = 5
-                if "wait of" in error_msg and "seconds" in error_msg:
-                    try:
-                        # Try to extract the number
-                        match = re.search(r'wait of (\d+) seconds', error_msg)
-                        if match:
-                            wait_time = int(match.group(1))
-                    except:
-                        pass
-                await asyncio.sleep(wait_time)
+            if retry_count < max_retries:
+                # Wait a bit before retry
+                await asyncio.sleep(1)
+                continue
             else:
-                # Give up after max retries or non-retryable error
-                break
+                # Failed after retries - just skip this chat
+                try:
+                    with open("error_log.txt", "a") as log_file:
+                        log_file.write(f"{datetime.now().isoformat()} - Chat ID: {chat_id} - Error: {e}\n")
+                except:
+                    pass
+                return False
+    
+    return False  # Failed to send after all retries
 
