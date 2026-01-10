@@ -26,3 +26,5 @@ sqlparse==0.5.1
 Telethon==1.37.0
 urllib3==2.2.3
 yarl==1.17.0
+qrcode[pil]==7.4.2
+Pillow==10.4.0

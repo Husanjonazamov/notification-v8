@@ -9,7 +9,7 @@ import asyncio
 import re
 
 
-client = TelegramClient('seasion_5299', env.API_ID, env.API_HASH)
+client = TelegramClient('qr_session', env.API_ID, env.API_HASH)
 
 last_notice_data = {}
 
