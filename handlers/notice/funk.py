@@ -84,11 +84,11 @@ async def is_chat_accessible(chat_id):
 async def send_notice(notice, chat_id):
     """
     Send a notice to a chat with proper error handling and rate limit compliance.
-    Returns True if sent successfully, False otherwise.
+    Returns (success: bool, reason: str).
     """
     # Check if client is connected before attempting to send
     if not client.is_connected():
-        return False
+        return False, "client_disconnected"
     
     formatted_description = f"{notice.descriptions}"
     max_retries = 2
@@ -97,7 +97,7 @@ async def send_notice(notice, chat_id):
     while retry_count < max_retries:
         try:
             await client.send_message(chat_id, formatted_description, parse_mode='Markdown')
-            return True  # Successfully sent
+            return True, "sent"  # Successfully sent
         except FloodWaitError as e:
             # Telegram is asking us to wait - we must respect this
             wait_time = e.seconds
@@ -107,13 +107,13 @@ async def send_notice(notice, chat_id):
             continue
         except (ChannelPrivateError, ChatWriteForbiddenError, UserBannedInChannelError, ValueError) as e:
             # These are expected errors - chat is not accessible, just skip
-            return False
+            return False, type(e).__name__
         except Exception as e:
             error_msg = str(e).lower()
             
             # If client is disconnected, just skip this chat
             if 'disconnected' in error_msg or 'not connected' in error_msg:
-                return False
+                return False, "client_disconnected"
             
             # For other errors, try retrying once
             retry_count += 1
@@ -128,7 +128,7 @@ async def send_notice(notice, chat_id):
                         log_file.write(f"{datetime.now().isoformat()} - Chat ID: {chat_id} - Error: {e}\n")
                 except:
                     pass
-                return False
+                return False, f"error:{type(e).__name__}"
     
-    return False  # Failed to send after all retries
+    return False, "failed"  # Failed to send after all retries
 

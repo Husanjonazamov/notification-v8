@@ -4,13 +4,11 @@ services:
   bot:
     build:
       context: .
-      network: host   # <-- qo‘shildi
-
     volumes:
       - .:/code
       - sqlite_data:/code/db
     env_file:
-      - .env  
+      - .env
     ports:
       - "8077:8000"
     command: |
@@ -19,6 +17,9 @@ services:
         python3 manage.py runserver 0.0.0.0:8000 &
         wait
       "
+    networks:
+      - bot_network
+
   bot_service:
     build:
       context: .
@@ -30,6 +31,12 @@ services:
     depends_on:
       - bot
     restart: always
+    networks:
+      - bot_network
 
 volumes:
   sqlite_data:
+
+networks:
+  bot_network:
+    driver: bridge

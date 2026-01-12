@@ -57,11 +57,14 @@ async def dynamic_notice_send_task():
                             # Check if chat is accessible, if not just skip silently
                             if await is_chat_accessible(chat_id):
                                 # Try to send notice, if fails just continue to next chat
-                                success = await send_notice(notice, chat_id)
+                                success, reason = await send_notice(notice, chat_id)
                                 if success:
                                     last_sent_times[chat_id] = current_time
                                     # Small delay between messages to different chats to avoid API rate limits
                                     await asyncio.sleep(0.3)
+                                else:
+                                    # Log only once per failure occurrence
+                                    print(f"Skipped chat {chat_id} reason={reason}")
                             # If chat is not accessible or client disconnected, just skip silently and continue
                         else:
                             # Small delay between checking different chats
