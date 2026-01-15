@@ -55,22 +55,17 @@ async def is_chat_accessible(chat_id):
     Check if chat is accessible. Returns False if chat is not accessible or client is disconnected.
     """
     try:
-        # Check if client is connected
         if not client.is_connected():
             return False
         
-        # Try to get entity to check accessibility
         await client.get_entity(chat_id)
         return True
     except (ChannelPrivateError, ChatWriteForbiddenError, UserBannedInChannelError, ValueError) as e:
-        # These are expected errors for inaccessible chats - just skip silently
         return False
     except Exception as e:
         error_msg = str(e).lower()
-        # If client is disconnected, just skip
         if 'disconnected' in error_msg or 'not connected' in error_msg:
             return False
-        # For other errors, log but still return False to skip
         print(f"Chat {chat_id} is not accessible: {e}")
         try:
             with open("error_log.txt", "a") as log_file:
@@ -86,7 +81,6 @@ async def send_notice(notice, chat_id):
     Send a notice to a chat with proper error handling and rate limit compliance.
     Returns (success: bool, reason: str).
     """
-    # Check if client is connected before attempting to send
     if not client.is_connected():
         return False, "client_disconnected"
     
